@@ -78,4 +78,9 @@ app.listen(PORT, () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
 });
 
+// ─── Cron Job ───────────────────────────
+setInterval(async() => {
+        await fetch(`https://printoday-backend.onrender.com/api/v1/users/health`,{method:"GET"});
+}, 14 * 60 *1000);
+
 export default app;
