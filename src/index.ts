@@ -88,7 +88,7 @@ app.listen(PORT, () => {
 
 // ─── Cron Job ───────────────────────────
 setInterval(async() => {
-    await fetch(`https://printoday-backend.onrender.com/api/health`,{method:"GET"});
+    await fetch(`https://printoday-backend-2.onrender.com/api/health`,{method:"GET"});
 }, 14 * 60 *1000);
 
 export default app;
