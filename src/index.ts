@@ -23,7 +23,7 @@ const PORT = process.env.PORT || 5000;
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'http://prin-today.vercel.app',
+  origin: process.env.CLIENT_ORIGIN || 'https://prin-today.vercel.app',
   credentials: true // Allow cookies to be sent cross-origin
 }));
 
