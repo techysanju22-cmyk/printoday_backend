@@ -54,11 +54,19 @@ if (process.env.NODE_ENV !== 'production') {
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'PrinToday Server is running',
-    timestamp: new Date().toISOString()
-  });
+  try{
+    console.log("health OK")
+    return res.status(200).json({
+      success: true,
+      message: "Health OK",
+    })
+  }catch(error){
+    console.error("Health error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while checking health",
+    });
+  }
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
@@ -80,7 +88,7 @@ app.listen(PORT, () => {
 
 // ─── Cron Job ───────────────────────────
 setInterval(async() => {
-        await fetch(`https://printoday-backend.onrender.com/api/v1/users/health`,{method:"GET"});
+    await fetch(`https://printoday-backend.onrender.com/api/health`,{method:"GET"});
 }, 14 * 60 *1000);
 
 export default app;
