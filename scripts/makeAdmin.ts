@@ -8,10 +8,10 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const makeAdmin = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/printoday');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/printoday');
     console.log('MongoDB Connected');
 
-    const email = 'admin@printoday.com';
+    const email = 'techysanju52@gmail.com';
 
     let user = await User.findOne({ email });
 

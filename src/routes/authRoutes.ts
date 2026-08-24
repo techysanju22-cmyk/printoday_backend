@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import {
-  initiateRegister,
-  verifyRegisterOtp,
-  sendLoginOtp,
-  verifyLoginOtp,
+  register,
+  login,
   findAccount,
   logout,
   getMe,
@@ -13,10 +11,8 @@ import { protect } from '../middleware/protect';
 
 const router = Router();
 
-router.post('/initiate-register', initiateRegister);
-router.post('/verify-register-otp', verifyRegisterOtp);
-router.post('/send-login-otp', sendLoginOtp);
-router.post('/verify-login-otp', verifyLoginOtp);
+router.post('/register', register);
+router.post('/login', login);
 router.post('/find-account', findAccount);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);

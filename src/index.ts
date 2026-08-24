@@ -35,11 +35,11 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// ─── Auth OTP rate limiter (stricter) ────────────────────────────────────────
-const otpLimiter = rateLimit({
+// ─── Auth rate limiter (stricter) ────────────────────────────────────────────
+const authLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 5,
-  message: { success: false, error: 'Too many OTP requests. Please wait.' }
+  max: 10, // slightly more relaxed for direct attempts
+  message: { success: false, error: 'Too many attempts. Please try again later.' }
 });
 
 // ─── Body & Cookie Parsing ────────────────────────────────────────────────────
@@ -70,9 +70,9 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/auth/send-login-otp', otpLimiter); // stricter rate limit on OTP
-app.use('/api/v1/auth/initiate-register', otpLimiter); 
 app.use('/api/v1/catalog', catalogRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/admin', adminRoutes);

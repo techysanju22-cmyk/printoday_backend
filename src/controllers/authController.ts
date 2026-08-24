@@ -22,16 +22,16 @@ const maskEmail = (email: string): string => {
 // ─── REGISTRATION ─────────────────────────────────────────────────────────────
 
 /**
- * @desc   Step 1 of Registration — validate, check conflicts, save pending, send OTP
- * @route  POST /api/v1/auth/initiate-register
+ * @desc   Register user directly
+ * @route  POST /api/v1/auth/register
  */
-export const initiateRegister = async (
+export const register = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { email, mobile, accountType, ...rest } = req.body;
+    const { email, mobile, accountType, name, companyName, contactName, designation, address, gstin, hasGstin, addressProofUrl } = req.body;
 
     if (!email || !mobile || !accountType) {
       res.status(400).json({ success: false, error: 'Email, mobile, and account type are required.' });
@@ -59,74 +59,9 @@ export const initiateRegister = async (
       return;
     }
 
-    // --- Save pending registration (upsert by email so resend works) ---
-    const otp = generateOtp();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-
-    await PendingRegistration.findOneAndUpdate(
-      { email: email.toLowerCase().trim() },
-      {
-        email: email.toLowerCase().trim(),
-        mobile,
-        otp,
-        otpExpires,
-        accountType,
-        payload: { email: email.toLowerCase().trim(), mobile, accountType, ...rest }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    // --- Send OTP email ---
-    await sendEmail({
-      email,
-      subject: 'PrinToday – Verify Your Email to Complete Registration',
-      message: `Your registration OTP is: ${otp}\n\nThis code expires in 10 minutes. Do not share it with anyone.`
-    });
-
-    res.status(200).json({ success: true, message: 'OTP sent to your email. Please verify to complete registration.' });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc   Step 2 of Registration — verify OTP, create User, issue session
- * @route  POST /api/v1/auth/verify-register-otp
- */
-export const verifyRegisterOtp = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { email, otp } = req.body;
-    if (!email || !otp) {
-      res.status(400).json({ success: false, error: 'Email and OTP are required.' });
-      return;
-    }
-
-    const pending = await PendingRegistration.findOne({ email: email.toLowerCase().trim() });
-
-    if (!pending) {
-      res.status(404).json({ success: false, error: 'No pending registration found. Please register again.' });
-      return;
-    }
-    if (pending.otp !== otp) {
-      res.status(401).json({ success: false, error: 'Invalid OTP.' });
-      return;
-    }
-    if (pending.otpExpires < new Date()) {
-      await pending.deleteOne();
-      res.status(410).json({ success: false, error: 'OTP has expired. Please register again.' });
-      return;
-    }
-
-    const { accountType, payload } = pending;
-    const { mobile, name, companyName, contactName, designation, address, gstin, hasGstin } = payload as Record<string, any>;
-
     // Build user document
     const userDoc: Record<string, unknown> = {
-      email: pending.email,
+      email: email.toLowerCase().trim(),
       mobileNumber: mobile,
       accountType,
     };
@@ -141,14 +76,13 @@ export const verifyRegisterOtp = async (
         address,
         gstin,
         hasGstin: !!hasGstin,
+        addressProofUrl,
         physicalVerificationStatus: 'PENDING',
         creditEligible: false
       };
     }
 
     const user = await User.create(userDoc);
-    await pending.deleteOne(); // clean up
-
     sendTokenResponse(getStringId(user._id), 201, res);
   } catch (error) {
     next(error);
@@ -158,72 +92,36 @@ export const verifyRegisterOtp = async (
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 
 /**
- * @desc   Send login OTP to a registered email
- * @route  POST /api/v1/auth/send-login-otp
+ * @desc   Login user directly by email or mobile number
+ * @route  POST /api/v1/auth/login
  */
-export const sendLoginOtp = async (
+export const login = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      res.status(400).json({ success: false, error: 'Email is required.' });
+    const { identifier } = req.body;
+    if (!identifier) {
+      res.status(400).json({ success: false, error: 'Email or mobile number is required.' });
       return;
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const cleanIdentifier = identifier.toLowerCase().trim();
+
+    // Check if it's an email or phone number
+    let user;
+    if (cleanIdentifier.includes('@')) {
+      user = await User.findOne({ email: cleanIdentifier });
+    } else {
+      user = await User.findOne({ mobileNumber: cleanIdentifier });
+    }
+
     if (!user) {
-      res.status(404).json({ success: false, error: 'No account found with this email.' });
+      res.status(404).json({ success: false, error: 'No account found with this email or mobile number.' });
       return;
     }
 
-    const otp = generateOtp();
-    await EmailOtp.deleteMany({ email }); // clear old OTPs
-    await EmailOtp.create({ email, otp });
-
-    await sendEmail({
-      email,
-      subject: 'PrinToday – Your Login OTP',
-      message: `Your login OTP is: ${otp}\n\nThis code expires in 5 minutes. Do not share it with anyone.`
-    });
-
-    res.status(200).json({ success: true, message: 'OTP sent to your email.' });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc   Verify login OTP and issue session cookie
- * @route  POST /api/v1/auth/verify-login-otp
- */
-export const verifyLoginOtp = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { email, otp } = req.body;
-    if (!email || !otp) {
-      res.status(400).json({ success: false, error: 'Email and OTP are required.' });
-      return;
-    }
-
-    const emailOtp = await EmailOtp.findOne({ email: email.toLowerCase().trim(), otp });
-    if (!emailOtp) {
-      res.status(401).json({ success: false, error: 'Invalid or expired OTP.' });
-      return;
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (!user) {
-      res.status(404).json({ success: false, error: 'Account not found.' });
-      return;
-    }
-
-    await emailOtp.deleteOne();
     sendTokenResponse(getStringId(user._id), 200, res);
   } catch (error) {
     next(error);
