@@ -20,29 +20,21 @@ connectDB();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ─── Trust Render's Reverse Proxy ─────────────────────────────────────────────
+// Required so req.ip, rate limiting, and cookies work correctly behind Render/Nginx
+app.set('trust proxy', 1);
+
 // ─── Security Middleware ──────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || 'https://prin-today.vercel.app',
   credentials: true // Allow cookies to be sent cross-origin
 }));
 
-// ─── Rate Limiting (global) ───────────────────────────────────────────────────
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  message: { success: false, error: 'Too many requests. Please try again later.' }
-});
-app.use(limiter);
-
-// ─── Auth rate limiter (stricter) ────────────────────────────────────────────
-const authLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 10, // slightly more relaxed for direct attempts
-  message: { success: false, error: 'Too many attempts. Please try again later.' }
-});
-
 // ─── Body & Cookie Parsing ────────────────────────────────────────────────────
+// MUST come before rate limiters and routes so req.body is populated
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -52,19 +44,38 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
+// ─── Rate Limiting ────────────────────────────────────────────────────────────
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Please try again later.' }
+});
+app.use(limiter);
+
+// Stricter limiter for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many attempts. Please try again later.' }
+});
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  try{
-    console.log("health OK")
+  try {
+    console.log('health OK');
     return res.status(200).json({
       success: true,
-      message: "Health OK",
-    })
-  }catch(error){
-    console.error("Health error:", error);
+      message: 'Health OK',
+    });
+  } catch (error) {
+    console.error('Health error:', error);
     return res.status(500).json({
       success: false,
-      message: "Something went wrong while checking health",
+      message: 'Something went wrong while checking health',
     });
   }
 });
@@ -86,9 +97,9 @@ app.listen(PORT, () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
 });
 
-// ─── Cron Job ───────────────────────────
-setInterval(async() => {
-    await fetch(`https://printoday-backend-2.onrender.com/api/health`,{method:"GET"});
-}, 14 * 60 *1000);
+// ─── Cron Job: Keep Render dyno alive ─────────────────────────────────────────
+setInterval(async () => {
+  await fetch('https://printoday-backend-2.onrender.com/api/health', { method: 'GET' });
+}, 14 * 60 * 1000);
 
 export default app;
