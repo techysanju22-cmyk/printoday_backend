@@ -13,14 +13,14 @@ export const sendTokenResponse = (userId: string, statusCode: number, res: Respo
   const token = generateToken(userId);
 
   const cookieExpire = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
-
+  console.log("sending token--->")
   res
     .status(statusCode)
     .cookie('token', token, {
       expires: new Date(Date.now() + cookieExpire),
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true,
+      sameSite: 'none',
     })
     .json({
       success: true,
