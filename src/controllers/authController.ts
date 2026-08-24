@@ -101,6 +101,7 @@ export const login = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    console.log("auth hit, req.body: ",req.body , ",, identifier: ",req.body.identifier)
     const { identifier } = req.body;
     if (!identifier) {
       res.status(400).json({ success: false, error: 'Email or mobile number is required.' });
