@@ -14,10 +14,13 @@ export interface IUser extends Document {
   role: 'USER' | 'ADMIN';
   accountType: 'INDIVIDUAL' | 'ORGANIZATION';
 
+  isBanned?: boolean;
+
   // Individual Profile
   individual?: {
     name: string;
     address: Address;
+    creditEligible?: boolean;
   };
 
   // Organization Profile
@@ -61,6 +64,10 @@ const userSchema = new Schema<IUser>({
     enum: ['USER', 'ADMIN'],
     default: 'USER'
   },
+  isBanned: {
+    type: Boolean,
+    default: false
+  },
   accountType: {
     type: String,
     enum: ['INDIVIDUAL', 'ORGANIZATION'],
@@ -68,7 +75,8 @@ const userSchema = new Schema<IUser>({
   },
   individual: {
     name: { type: String },
-    address: { type: addressSchema }
+    address: { type: addressSchema },
+    creditEligible: { type: Boolean, default: false }
   },
   organization: {
     companyName: { type: String },

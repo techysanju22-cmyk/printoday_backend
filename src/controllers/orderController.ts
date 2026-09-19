@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Order } from '../models/Order';
 import { Product } from '../models/Product';
 import { User } from '../models/User';
+import { sendEmail } from '../config/mailer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,7 @@ export const checkout = async (
 ): Promise<void> => {
   try {
     const userId = (req as any).user._id;
-    const { items, shippingAddress, paymentMethod, customerName, customerEmail, customerPhone, gstin } = req.body;
+    const { items, shippingAddress, paymentMethod, paymentTerm, utrNumber, customerName, customerEmail, customerPhone, gstin, couponCode } = req.body;
 
     if (!items || items.length === 0) {
       res.status(400).json({ success: false, error: 'Cart is empty.' });
@@ -82,16 +83,30 @@ export const checkout = async (
       return;
     }
 
-    // If 30-day credit requested, verify the org is eligible
-    if (paymentMethod === '30_DAYS_CREDIT') {
+    // Verify credit eligibility based on paymentTerm
+    if (paymentTerm === 'ORG_CREDIT') {
       if (user.accountType !== 'ORGANIZATION') {
-        res.status(403).json({ success: false, error: '30-day credit is only available for registered organizations.' });
+        res.status(403).json({ success: false, error: 'Org credit is only available for registered organizations.' });
         return;
       }
       if (!user.organization?.creditEligible) {
         res.status(403).json({ success: false, error: '30-day credit is not yet activated for your account. Please contact admin for approval.' });
         return;
       }
+    } else if (paymentTerm === '50_PERCENT_ADVANCE') {
+      if (user.accountType !== 'INDIVIDUAL') {
+        res.status(403).json({ success: false, error: '50% advance credit is only available for individuals.' });
+        return;
+      }
+      if (!user.individual?.creditEligible) {
+        res.status(403).json({ success: false, error: '30-day credit (50% advance) is not yet activated for your account. Please contact admin for approval.' });
+        return;
+      }
+    }
+
+    if ((paymentTerm === 'FULL' || paymentTerm === '50_PERCENT_ADVANCE') && !utrNumber) {
+      res.status(400).json({ success: false, error: 'UTR / Transaction Reference No. is required for UPI payments.' });
+      return;
     }
 
     // Build order items — all prices & metrics calculated from DB, never from client payload
@@ -214,12 +229,55 @@ export const checkout = async (
       });
     }
 
-    const gstAmount = Math.round(subtotal * 0.18);
-    const shippingFee = subtotal > 999 ? 0 : 99;
-    const totalAmount = subtotal + gstAmount + shippingFee;
+    let gstAmount = Math.round(subtotal * 0.18);
+    let shippingFee = subtotal > 999 ? 0 : 99;
+    let couponDiscountAmount = 0;
+    
+    // ── Apply Coupon if provided ──────────────────────────────────────────────
+    if (couponCode) {
+      const { Coupon } = await import('../models/Coupon');
+      const coupon = await Coupon.findOne({ code: couponCode.toUpperCase(), isActive: true });
+      if (coupon && coupon.usedCount < coupon.maxUses) {
+        let valid = false;
+        if (coupon.conditionType === 'NONE') {
+          valid = true;
+        } else if (coupon.conditionType === 'MIN_ORDER_AMOUNT' && coupon.minOrderAmount) {
+          valid = subtotal >= coupon.minOrderAmount;
+        } else if (coupon.conditionType === 'SPECIFIC_PRODUCT' && coupon.productId) {
+          valid = orderItems.some(item => item.productId.toString() === coupon.productId?.toString());
+        }
+
+        if (valid) {
+          couponDiscountAmount = Math.round((subtotal * coupon.discountPercentage) / 100);
+          await Coupon.findByIdAndUpdate(coupon._id, { $inc: { usedCount: 1 } });
+        }
+      }
+    }
+
+    // Recalculate gst and total if discount applied to subtotal
+    const discountedSubtotal = Math.max(0, subtotal - couponDiscountAmount);
+    gstAmount = Math.round(discountedSubtotal * 0.18);
+    shippingFee = discountedSubtotal > 999 ? 0 : 99;
+    const totalAmount = discountedSubtotal + gstAmount + shippingFee;
+
+    let advancePaid = totalAmount;
+    let remainingBalance = 0;
+    let paymentStatus = 'PENDING_VERIFICATION';
+
+    if (paymentTerm === 'ORG_CREDIT') {
+      advancePaid = 0;
+      remainingBalance = totalAmount;
+      paymentStatus = 'CREDIT_PENDING';
+    } else if (paymentTerm === '50_PERCENT_ADVANCE') {
+      advancePaid = Math.round(totalAmount * 0.5);
+      remainingBalance = totalAmount - advancePaid;
+      paymentStatus = 'PENDING_VERIFICATION';
+    }
+
+    const orderNumber = generateOrderNumber();
 
     const order = await Order.create({
-      orderNumber: generateOrderNumber(),
+      orderNumber,
       userId,
       accountType: user.accountType,
       shippingAddress: {
@@ -234,11 +292,77 @@ export const checkout = async (
       gstAmount,
       shippingFee,
       totalAmount,
+      couponCode: couponDiscountAmount > 0 ? couponCode : undefined,
+      couponDiscountAmount: couponDiscountAmount > 0 ? couponDiscountAmount : undefined,
       paymentMethod: paymentMethod || 'RAZORPAY',
-      paymentStatus: 'PENDING',
+      paymentTerm: paymentTerm as any,
+      paymentStatus: paymentStatus as any,
+      advancePaid,
+      remainingBalance,
+      utrNumber,
       orderStatus: 'PLACED',
       expectedProcessingTime: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 hours from now
     });
+
+    // Send Admin Email (Non-blocking)
+    const itemsHtml = orderItems.map(item => `
+      <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;">${item.title}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">${item.quantity}</td>
+        <td style="padding: 8px; border: 1px solid #ddd;">₹${item.itemTotalPrice.toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #0b2239; border-bottom: 2px solid #0ea5e9; padding-bottom: 10px;">🛒 New Order: ${orderNumber}</h2>
+        <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+        
+        <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+          <h3 style="margin-top: 0; color: #0b2239;">Customer Details</h3>
+          <p style="margin: 5px 0;"><strong>Name:</strong> ${customerName || user.email}</p>
+          <p style="margin: 5px 0;"><strong>Email:</strong> ${user.email}</p>
+          <p style="margin: 5px 0;"><strong>Phone:</strong> ${customerPhone || 'N/A'}</p>
+          <p style="margin: 5px 0;"><strong>Type:</strong> ${user.accountType}</p>
+        </div>
+
+        <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #10b981;">
+          <h3 style="margin-top: 0; color: #065f46;">Payment Info</h3>
+          <p style="margin: 5px 0;"><strong>Payment Term:</strong> ${paymentTerm === 'ORG_CREDIT' ? '30-Day Org Credit' : paymentTerm === '50_PERCENT_ADVANCE' ? '30-Day Credit (50% Advance)' : 'Full Payment'}</p>
+          <p style="margin: 5px 0;"><strong>Advance Paid:</strong> ₹${advancePaid.toLocaleString()}</p>
+          <p style="margin: 5px 0;"><strong>Remaining Balance:</strong> ₹${remainingBalance.toLocaleString()}</p>
+          ${utrNumber ? `<p style="margin: 5px 0;"><strong>UTR / Ref No:</strong> ${utrNumber}</p>` : ''}
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f1f5f9;">
+              <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Product</th>
+              <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Qty</th>
+              <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+
+        <div style="text-align: right; font-size: 14px;">
+          <p style="margin: 5px 0;"><strong>Subtotal:</strong> ₹${subtotal.toLocaleString()}</p>
+          ${couponDiscountAmount > 0 ? `<p style="margin: 5px 0; color: #10b981;"><strong>Coupon Discount (${couponCode}):</strong> -₹${couponDiscountAmount.toLocaleString()}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>GST (18%):</strong> ₹${gstAmount.toLocaleString()}</p>
+          <p style="margin: 5px 0;"><strong>Shipping:</strong> ${shippingFee === 0 ? 'Free' : `₹${shippingFee}`}</p>
+          <h3 style="margin: 10px 0; font-size: 18px; color: #0b2239;">Grand Total: ₹${totalAmount.toLocaleString()}</h3>
+        </div>
+      </div>
+    `;
+
+    sendEmail({
+      email: 'techysanju10@gmail.com',
+      subject: `🛒 New Order Placed — ${orderNumber}`,
+      message: `New Order: ${orderNumber}`, // plain text fallback
+      html: emailHtml
+    }).catch(err => console.error('Failed to send admin order email:', err));
 
     res.status(201).json({ success: true, data: order });
   } catch (error: any) {
@@ -271,4 +395,59 @@ export const getMyOrders = async (
   } catch (error) {
     next(error);
   }
+};
+
+// ─── Validate Coupon ──────────────────────────────────────────────────────────
+
+export const validateCoupon = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { code, subtotal, itemIds } = req.body;
+    if (!code) {
+      res.status(400).json({ success: false, error: 'Coupon code is required' });
+      return;
+    }
+
+    const { Coupon } = await import('../models/Coupon');
+    const coupon = await Coupon.findOne({ code: code.toUpperCase() });
+
+    if (!coupon) {
+      res.status(404).json({ success: false, error: 'Invalid coupon code' });
+      return;
+    }
+
+    if (!coupon.isActive) {
+      res.status(400).json({ success: false, error: 'This coupon is no longer active' });
+      return;
+    }
+
+    if (coupon.usedCount >= coupon.maxUses) {
+      res.status(400).json({ success: false, error: 'This coupon has reached its usage limit' });
+      return;
+    }
+
+    if (coupon.conditionType === 'MIN_ORDER_AMOUNT' && coupon.minOrderAmount) {
+      if (subtotal < coupon.minOrderAmount) {
+        res.status(400).json({ success: false, error: `This coupon requires a minimum order amount of ₹${coupon.minOrderAmount}` });
+        return;
+      }
+    }
+
+    if (coupon.conditionType === 'SPECIFIC_PRODUCT' && coupon.productId) {
+      if (!itemIds || !itemIds.includes(coupon.productId.toString())) {
+        res.status(400).json({ success: false, error: 'This coupon is only valid for specific products' });
+        return;
+      }
+    }
+
+    const discountAmount = Math.round((subtotal * coupon.discountPercentage) / 100);
+
+    res.status(200).json({ 
+      success: true, 
+      data: {
+        code: coupon.code,
+        discountPercentage: coupon.discountPercentage,
+        discountAmount
+      } 
+    });
+  } catch (error) { next(error); }
 };

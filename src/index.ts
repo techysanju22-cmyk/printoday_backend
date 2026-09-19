@@ -29,7 +29,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'https://prin-today.vercel.app',
+  origin: process.env.CLIENT_ORIGIN || 'https://printoday.zyflare.com',
   credentials: true // Allow cookies to be sent cross-origin
 }));
 

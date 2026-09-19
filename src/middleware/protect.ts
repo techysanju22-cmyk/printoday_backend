@@ -33,6 +33,11 @@ export const protect = async (req: Request, res: Response, next: NextFunction): 
       return;
     }
 
+    if (user.isBanned) {
+      res.status(403).json({ success: false, error: 'Your account has been suspended. Contact support.' });
+      return;
+    }
+
     req.user = user;
     next();
   } catch (err) {

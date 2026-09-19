@@ -36,8 +36,17 @@ export interface IOrder extends Document {
   totalAmount: number;
 
   paymentMethod: 'RAZORPAY' | 'COD' | '30_DAYS_CREDIT';
-  paymentStatus: 'PENDING' | 'PAID' | 'FAILED' | 'CREDIT_ISSUED';
+  paymentTerm?: 'FULL' | '50_PERCENT_ADVANCE' | 'ORG_CREDIT';
+  paymentStatus: 'PENDING' | 'PENDING_VERIFICATION' | 'PAID' | 'FAILED' | 'CREDIT_ISSUED' | 'CREDIT_PENDING';
+  
+  advancePaid: number;
+  remainingBalance: number;
+  utrNumber?: string;
+  
   orderStatus: 'PLACED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED';
+
+  couponCode?: string;
+  couponDiscountAmount?: number;
 
   razorpayDetails?: {
     orderId: string;
@@ -48,6 +57,7 @@ export interface IOrder extends Document {
   expectedProcessingTime?: Date;
   expectedShippingTime?: Date;
   expectedDeliveryTime?: Date;
+  adminNote?: string;
 }
 
 const orderItemSchema = new Schema<IOrderItem>({
@@ -86,8 +96,17 @@ const orderSchema = new Schema<IOrder>({
   totalAmount: { type: Number, required: true },
 
   paymentMethod: { type: String, enum: ['RAZORPAY', 'COD', '30_DAYS_CREDIT'], required: true },
-  paymentStatus: { type: String, enum: ['PENDING', 'PAID', 'FAILED', 'CREDIT_ISSUED'], default: 'PENDING' },
+  paymentTerm: { type: String, enum: ['FULL', '50_PERCENT_ADVANCE', 'ORG_CREDIT'] },
+  paymentStatus: { type: String, enum: ['PENDING', 'PENDING_VERIFICATION', 'PAID', 'FAILED', 'CREDIT_ISSUED', 'CREDIT_PENDING'], default: 'PENDING' },
+  
+  advancePaid: { type: Number, default: 0 },
+  remainingBalance: { type: Number, default: 0 },
+  utrNumber: { type: String },
+
   orderStatus: { type: String, enum: ['PLACED', 'PROCESSING', 'SHIPPED', 'DELIVERED'], default: 'PLACED' },
+
+  couponCode: { type: String },
+  couponDiscountAmount: { type: Number },
 
   razorpayDetails: {
     orderId: { type: String },
@@ -97,7 +116,9 @@ const orderSchema = new Schema<IOrder>({
 
   expectedProcessingTime: { type: Date },
   expectedShippingTime: { type: Date },
-  expectedDeliveryTime: { type: Date }
+  expectedDeliveryTime: { type: Date },
+  
+  adminNote: { type: String },
 }, {
   timestamps: true
 });

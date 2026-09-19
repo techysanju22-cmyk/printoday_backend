@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 
 // Configure a mock ethereal or real transport based on .env
-export const sendEmail = async (options: { email: string; subject: string; message: string }) => {
+export const sendEmail = async (options: { email: string; subject: string; message: string; html?: string }) => {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -14,7 +14,8 @@ export const sendEmail = async (options: { email: string; subject: string; messa
     from: process.env.NODEMAILER_USER,
     to: options.email,
     subject: options.subject,
-    text: options.message
+    text: options.message,
+    html: options.html
   };
 
   const info = await transporter.sendMail(message);
