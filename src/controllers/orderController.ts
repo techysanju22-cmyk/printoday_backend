@@ -104,10 +104,7 @@ export const checkout = async (
       }
     }
 
-    if ((paymentTerm === 'FULL' || paymentTerm === '50_PERCENT_ADVANCE') && !utrNumber) {
-      res.status(400).json({ success: false, error: 'UTR / Transaction Reference No. is required for UPI payments.' });
-      return;
-    }
+    // utrNumber requirement temporarily removed as online payments are bypassed
 
     // Build order items — all prices & metrics calculated from DB, never from client payload
     let subtotal = 0;
@@ -331,7 +328,6 @@ export const checkout = async (
           <p style="margin: 5px 0;"><strong>Payment Term:</strong> ${paymentTerm === 'ORG_CREDIT' ? '30-Day Org Credit' : paymentTerm === '50_PERCENT_ADVANCE' ? '30-Day Credit (50% Advance)' : 'Full Payment'}</p>
           <p style="margin: 5px 0;"><strong>Advance Paid:</strong> ₹${advancePaid.toLocaleString()}</p>
           <p style="margin: 5px 0;"><strong>Remaining Balance:</strong> ₹${remainingBalance.toLocaleString()}</p>
-          ${utrNumber ? `<p style="margin: 5px 0;"><strong>UTR / Ref No:</strong> ${utrNumber}</p>` : ''}
         </div>
 
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
