@@ -9,6 +9,7 @@ import {
   adminGetOrders,
   adminUpdateOrderStatus,
   adminUpdatePaymentStatus,
+  adminDeleteOrder,
   getPendingOrganizations,
   verifyOrganization,
   adminGetUsers,
@@ -41,6 +42,7 @@ router.post('/subcategories', adminCreateSubcategory);
 router.get('/orders', adminGetOrders);
 router.put('/orders/:id/status', adminUpdateOrderStatus);
 router.put('/orders/:id/payment', adminUpdatePaymentStatus);
+router.delete('/orders/:id', adminDeleteOrder);
 
 // Organization Verification
 router.get('/organizations/pending-verification', getPendingOrganizations);

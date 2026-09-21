@@ -83,6 +83,13 @@ export const checkout = async (
       return;
     }
 
+    // Limit users to 3 pending orders at a time
+    const pendingOrderCount = await Order.countDocuments({ userId, paymentStatus: { $in: ['PENDING', 'PENDING_VERIFICATION'] } });
+    if (pendingOrderCount >= 3) {
+      res.status(403).json({ success: false, error: 'You have reached the maximum limit of 3 pending orders. Please complete payment for existing orders before placing a new one.' });
+      return;
+    }
+
     // Verify credit eligibility based on paymentTerm
     if (paymentTerm === 'ORG_CREDIT') {
       if (user.accountType !== 'ORGANIZATION') {
@@ -251,10 +258,10 @@ export const checkout = async (
       }
     }
 
-    // Recalculate gst and total if discount applied to subtotal
+    // Recalculate total if discount applied to subtotal
     const discountedSubtotal = Math.max(0, subtotal - couponDiscountAmount);
-    gstAmount = Math.round(discountedSubtotal * 0.18);
-    shippingFee = discountedSubtotal > 999 ? 0 : 99;
+    gstAmount = 0; // GST removed per user request
+    shippingFee = 0; // Express priority shipping is free
     const totalAmount = discountedSubtotal + gstAmount + shippingFee;
 
     let advancePaid = totalAmount;
@@ -323,11 +330,14 @@ export const checkout = async (
           <p style="margin: 5px 0;"><strong>Type:</strong> ${user.accountType}</p>
         </div>
 
-        <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #10b981;">
-          <h3 style="margin-top: 0; color: #065f46;">Payment Info</h3>
-          <p style="margin: 5px 0;"><strong>Payment Term:</strong> ${paymentTerm === 'ORG_CREDIT' ? '30-Day Org Credit' : paymentTerm === '50_PERCENT_ADVANCE' ? '30-Day Credit (50% Advance)' : 'Full Payment'}</p>
-          <p style="margin: 5px 0;"><strong>Advance Paid:</strong> ₹${advancePaid.toLocaleString()}</p>
-          <p style="margin: 5px 0;"><strong>Remaining Balance:</strong> ₹${remainingBalance.toLocaleString()}</p>
+        <div style="background-color: #eff6ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #3b82f6;">
+          <h3 style="margin-top: 0; color: #1e3a5f;">📦 Delivery Address</h3>
+          <p style="margin: 5px 0;"><strong>Name:</strong> ${shippingAddress.fullName || customerName || 'N/A'}</p>
+          ${shippingAddress.houseNo ? `<p style="margin: 5px 0;">${shippingAddress.houseNo}</p>` : ''}
+          ${shippingAddress.buildingName ? `<p style="margin: 5px 0;">${shippingAddress.buildingName}</p>` : ''}
+          <p style="margin: 5px 0;">${shippingAddress.streetName}</p>
+          <p style="margin: 5px 0;">${shippingAddress.area}</p>
+          <p style="margin: 5px 0;"><strong>PIN:</strong> ${shippingAddress.pin}</p>
         </div>
 
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
@@ -346,7 +356,6 @@ export const checkout = async (
         <div style="text-align: right; font-size: 14px;">
           <p style="margin: 5px 0;"><strong>Subtotal:</strong> ₹${subtotal.toLocaleString()}</p>
           ${couponDiscountAmount > 0 ? `<p style="margin: 5px 0; color: #10b981;"><strong>Coupon Discount (${couponCode}):</strong> -₹${couponDiscountAmount.toLocaleString()}</p>` : ''}
-          <p style="margin: 5px 0;"><strong>GST (18%):</strong> ₹${gstAmount.toLocaleString()}</p>
           <p style="margin: 5px 0;"><strong>Shipping:</strong> ${shippingFee === 0 ? 'Free' : `₹${shippingFee}`}</p>
           <h3 style="margin: 10px 0; font-size: 18px; color: #0b2239;">Grand Total: ₹${totalAmount.toLocaleString()}</h3>
         </div>
@@ -358,7 +367,14 @@ export const checkout = async (
       subject: `🛒 New Order Placed — ${orderNumber}`,
       message: `New Order: ${orderNumber}`, // plain text fallback
       html: emailHtml
-    }).catch(err => console.error('Failed to send admin order email:', err));
+    }).catch(err => console.error('Failed to send admin order email (techysanju10):', err));
+
+    sendEmail({
+      email: 'rituparnodeynst@gmail.com',
+      subject: `🛒 New Order Placed — ${orderNumber}`,
+      message: `New Order: ${orderNumber}`, // plain text fallback
+      html: emailHtml
+    }).catch(err => console.error('Failed to send admin order email (rituparnodeynst):', err));
 
     res.status(201).json({ success: true, data: order });
   } catch (error: any) {

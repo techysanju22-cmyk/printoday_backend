@@ -35,7 +35,7 @@ export interface IOrder extends Document {
   shippingFee: number;
   totalAmount: number;
 
-  paymentMethod: 'RAZORPAY' | 'COD' | '30_DAYS_CREDIT';
+  paymentMethod: 'RAZORPAY' | 'COD' | '30_DAYS_CREDIT' | 'OFFLINE';
   paymentTerm?: 'FULL' | '50_PERCENT_ADVANCE' | 'ORG_CREDIT';
   paymentStatus: 'PENDING' | 'PENDING_VERIFICATION' | 'PAID' | 'FAILED' | 'CREDIT_ISSUED' | 'CREDIT_PENDING';
   
@@ -95,7 +95,7 @@ const orderSchema = new Schema<IOrder>({
   shippingFee: { type: Number, required: true },
   totalAmount: { type: Number, required: true },
 
-  paymentMethod: { type: String, enum: ['RAZORPAY', 'COD', '30_DAYS_CREDIT'], required: true },
+  paymentMethod: { type: String, enum: ['RAZORPAY', 'COD', '30_DAYS_CREDIT', 'OFFLINE'], required: true },
   paymentTerm: { type: String, enum: ['FULL', '50_PERCENT_ADVANCE', 'ORG_CREDIT'] },
   paymentStatus: { type: String, enum: ['PENDING', 'PENDING_VERIFICATION', 'PAID', 'FAILED', 'CREDIT_ISSUED', 'CREDIT_PENDING'], default: 'PENDING' },
   

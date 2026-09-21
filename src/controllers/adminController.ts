@@ -119,6 +119,14 @@ export const adminUpdatePaymentStatus = async (req: Request, res: Response, next
   } catch (error) { next(error); }
 };
 
+export const adminDeleteOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) { res.status(404).json({ success: false, error: 'Order not found' }); return; }
+    res.status(200).json({ success: true, data: {} });
+  } catch (error) { next(error); }
+};
+
 // ─── Organization Verification ───────────────────────────────────────────────
 
 export const getPendingOrganizations = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
