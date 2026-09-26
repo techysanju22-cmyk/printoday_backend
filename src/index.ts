@@ -1,3 +1,6 @@
+import dns from 'dns';
+dns.setDefaultResultOrder('ipv4first'); // Force IPv4 to prevent ENETUNREACH on Render (IPv6 not supported)
+
 import './config/env'; // ⚠️ MUST be first — loads dotenv before any other module reads process.env
 import express from 'express';
 import cors from 'cors';
