@@ -3,12 +3,16 @@ import nodemailer from 'nodemailer';
 // Configure a mock ethereal or real transport based on .env
 export const sendEmail = async (options: { email: string; subject: string; message: string; html?: string }) => {
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    family: 4, // Force IPv4 explicitly
     auth: {
       user: process.env.NODEMAILER_USER,
       pass: process.env.NODEMAILER_PASS
     }
-  });
+  } as nodemailer.TransportOptions & { family?: number });
+
 
   const message = {
     from: process.env.NODEMAILER_USER,
