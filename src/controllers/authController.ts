@@ -184,6 +184,8 @@ export const logout = (_req: Request, res: Response): void => {
   res.cookie('token', 'none', {
     expires: new Date(Date.now() + 10 * 1000),
     httpOnly: true,
+    secure: true,
+    sameSite: 'none',
   });
   res.status(200).json({ success: true, data: {} });
 };
